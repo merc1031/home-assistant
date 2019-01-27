@@ -8,6 +8,7 @@ import logging
 
 from aiohttp import web
 import voluptuous as vol
+import json
 
 from homeassistant import util
 from homeassistant.const import (
@@ -58,7 +59,9 @@ DEFAULT_TYPE = TYPE_GOOGLE
 
 CONFIG_ENTITY_SCHEMA = vol.Schema({
     vol.Optional(CONF_ENTITY_NAME): cv.string,
-    vol.Optional(CONF_ENTITY_HIDDEN): cv.boolean
+    vol.Optional(CONF_ENTITY_HIDDEN): cv.boolean,
+    vol.Optional('extra'): cv.string
+})
 })
 
 CONFIG_SCHEMA = vol.Schema({
@@ -248,6 +251,15 @@ class Config:
             return self.entities[entity.entity_id][CONF_ENTITY_NAME]
 
         return entity.attributes.get(ATTR_EMULATED_HUE_NAME, entity.name)
+
+    def get_entity_extra(self, entity):
+        """Get the extra of an entity."""
+        if entity.entity_id in self.entities and \
+                CONF_ENTITY_NAME in self.entities[entity.entity_id]:
+            extra = self.entities[entity.entity_id].get('extra', '{}')
+            return json.loads(extra)
+
+        return {}
 
     def is_entity_exposed(self, entity):
         """Determine if an entity should be exposed on the emulated bridge.
