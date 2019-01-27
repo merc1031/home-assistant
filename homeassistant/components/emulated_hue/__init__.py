@@ -23,7 +23,8 @@ from homeassistant.components.http import real_ip
 
 from .hue_api import (
     HueUsernameView, HueAllLightsStateView, HueOneLightStateView,
-    HueOneLightChangeView, HueGroupView, HueAllGroupsStateView)
+    HueOneLightChangeView, HueGroupView, HueAllGroupsStateView,
+    HueOneGroupStateView, HueOneGroupChangeView)
 from .upnp import DescriptionXmlView, UPNPResponderThread
 
 DOMAIN = 'emulated_hue'
@@ -31,6 +32,7 @@ DOMAIN = 'emulated_hue'
 _LOGGER = logging.getLogger(__name__)
 
 NUMBERS_FILE = 'emulated_hue_ids.json'
+GROUP_NUMBERS_FILE = 'emulated_hue_group_ids.json'
 
 CONF_HOST_IP = 'host_ip'
 CONF_LISTEN_PORT = 'listen_port'
@@ -44,6 +46,9 @@ CONF_TYPE = 'type'
 CONF_ENTITIES = 'entities'
 CONF_ENTITY_NAME = 'name'
 CONF_ENTITY_HIDDEN = 'hidden'
+CONF_GROUPS = 'groups'
+CONF_GROUP_NAME = 'name'
+CONF_GROUP_HIDDEN = 'hidden'
 
 TYPE_ALEXA = 'alexa'
 TYPE_GOOGLE = 'google_home'
@@ -62,6 +67,11 @@ CONFIG_ENTITY_SCHEMA = vol.Schema({
     vol.Optional(CONF_ENTITY_HIDDEN): cv.boolean,
     vol.Optional('extra'): cv.string
 })
+
+CONFIG_GROUP_SCHEMA = vol.Schema({
+    vol.Optional(CONF_GROUP_NAME): cv.string,
+    vol.Optional(CONF_GROUP_HIDDEN): cv.boolean,
+    vol.Optional('extra'): cv.string
 })
 
 CONFIG_SCHEMA = vol.Schema({
@@ -77,7 +87,9 @@ CONFIG_SCHEMA = vol.Schema({
         vol.Optional(CONF_TYPE, default=DEFAULT_TYPE):
             vol.Any(TYPE_ALEXA, TYPE_GOOGLE),
         vol.Optional(CONF_ENTITIES):
-            vol.Schema({cv.entity_id: CONFIG_ENTITY_SCHEMA})
+            vol.Schema({cv.entity_id: CONFIG_ENTITY_SCHEMA}),
+        vol.Optional(CONF_GROUPS):
+            vol.Schema({cv.entity_id: CONFIG_GROUP_SCHEMA})
     })
 }, extra=vol.ALLOW_EXTRA)
 
@@ -109,6 +121,8 @@ async def async_setup(hass, yaml_config):
     HueOneLightStateView(config).register(app, app.router)
     HueOneLightChangeView(config).register(app, app.router)
     HueAllGroupsStateView(config).register(app, app.router)
+    HueOneGroupStateView(config).register(app, app.router)
+    HueOneGroupChangeView(config).register(app, app.router)
     HueGroupView(config).register(app, app.router)
 
     upnp_listener = UPNPResponderThread(
@@ -157,7 +171,8 @@ class Config:
         """Initialize the instance."""
         self.hass = hass
         self.type = conf.get(CONF_TYPE)
-        self.numbers = None
+        self.entity_numbers = None
+        self.group_numbers = None
         self.cached_states = {}
 
         if self.type == TYPE_ALEXA:
@@ -211,25 +226,26 @@ class Config:
             CONF_ADVERTISE_PORT) or self.listen_port
 
         self.entities = conf.get(CONF_ENTITIES, {})
+        self.groups = conf.get(CONF_GROUPS, {})
 
     def entity_id_to_number(self, entity_id):
         """Get a unique number for the entity id."""
         if self.type == TYPE_ALEXA:
             return entity_id
 
-        if self.numbers is None:
-            self.numbers = _load_json(self.hass.config.path(NUMBERS_FILE))
+        if self.entity_numbers is None:
+            self.entity_numbers = _load_json(self.hass.config.path(NUMBERS_FILE))
 
         # Google Home
-        for number, ent_id in self.numbers.items():
+        for number, ent_id in self.entity_numbers.items():
             if entity_id == ent_id:
                 return number
 
         number = '1'
-        if self.numbers:
-            number = str(max(int(k) for k in self.numbers) + 1)
-        self.numbers[number] = entity_id
-        save_json(self.hass.config.path(NUMBERS_FILE), self.numbers)
+        if self.entity_numbers:
+            number = str(max(int(k) for k in self.entity_numbers) + 1)
+        self.entity_numbers[number] = entity_id
+        save_json(self.hass.config.path(NUMBERS_FILE), self.entity_numbers)
         return number
 
     def number_to_entity_id(self, number):
@@ -237,12 +253,12 @@ class Config:
         if self.type == TYPE_ALEXA:
             return number
 
-        if self.numbers is None:
-            self.numbers = _load_json(self.hass.config.path(NUMBERS_FILE))
+        if self.entity_numbers is None:
+            self.entity_numbers = _load_json(self.hass.config.path(NUMBERS_FILE))
 
         # Google Home
         assert isinstance(number, str)
-        return self.numbers.get(number)
+        return self.entity_numbers.get(number)
 
     def get_entity_name(self, entity):
         """Get the name of an entity."""
@@ -293,6 +309,92 @@ class Config:
         # Expose an entity if the entity's domain is exposed by default and
         # the configuration doesn't explicitly exclude it from being
         # exposed, or if the entity is explicitly exposed
+        is_default_exposed = \
+            domain_exposed_by_default and expose is not False
+
+        return is_default_exposed or expose
+
+    def group_id_to_number(self, group_id):
+        """Get a unique number for the group id."""
+        if self.type == TYPE_ALEXA:
+            return group_id
+
+        if self.group_numbers is None:
+            self.group_numbers = _load_json(self.hass.config.path(GROUP_NUMBERS_FILE))
+
+        # Google Home
+        for number, ent_id in self.group_numbers.items():
+            if group_id == ent_id:
+                return number
+
+        number = '1'
+        if self.group_numbers:
+            number = str(max(int(k) for k in self.group_numbers) + 1)
+        self.group_numbers[number] = group_id
+        save_json(self.hass.config.path(GROUP_NUMBERS_FILE), self.group_numbers)
+        return number
+
+    def number_to_group_id(self, number):
+        """Convert unique number to group id."""
+        if self.type == TYPE_ALEXA:
+            return number
+
+        if self.group_numbers is None:
+            self.group_numbers = _load_json(self.hass.config.path(GROUP_NUMBERS_FILE))
+
+        # Google Home
+        assert isinstance(number, str)
+        return self.group_numbers.get(number)
+
+    def get_group_name(self, group):
+        """Get the name of an group."""
+        if group.entity_id in self.entities and \
+                CONF_GROUP_NAME in self.entities[group.entity_id]:
+            return self.entities[group.entity_id][CONF_GROUP_NAME]
+
+        return group.attributes.get(ATTR_EMULATED_HUE_NAME, group.name)
+
+    def get_group_extra(self, group):
+        """Get the extra of an group."""
+        if group.entity_id in self.entities and \
+                CONF_GROUP_NAME in self.entities[group.entity_id]:
+            extra = self.entities[group.entity_id].get('extra', '{}')
+            return json.loads(extra)
+
+        return {}
+
+    def is_group_exposed(self, group):
+        """Determine if an group should be exposed on the emulated bridge.
+
+        Async friendly.
+        """
+        if group.attributes.get('view') is not None:
+            # Ignore entities that are views
+            return False
+
+        domain = group.domain.lower()
+        explicit_expose = group.attributes.get(ATTR_EMULATED_HUE, None)
+        explicit_hidden = group.attributes.get(ATTR_EMULATED_HUE_HIDDEN, None)
+
+        if group.entity_id in self.entities and \
+                CONF_GROUP_HIDDEN in self.entities[group.entity_id]:
+            explicit_hidden = \
+                self.entities[group.entity_id][CONF_GROUP_HIDDEN]
+
+        if explicit_expose is True or explicit_hidden is False:
+            expose = True
+        elif explicit_expose is False or explicit_hidden is True:
+            expose = False
+        else:
+            expose = None
+        get_deprecated(group.attributes, ATTR_EMULATED_HUE_HIDDEN,
+                       ATTR_EMULATED_HUE, None)
+        domain_exposed_by_default = \
+            self.expose_by_default and domain in self.exposed_domains
+
+        # Expose an group if the group's domain is exposed by default and
+        # the configuration doesn't explicitly exclude it from being
+        # exposed, or if the group is explicitly exposed
         is_default_exposed = \
             domain_exposed_by_default and expose is not False
 
