@@ -72,3 +72,9 @@ async def staticresource_middleware(request, handler):
             '{}.{}'.format(*fingerprinted.groups())
 
     return await handler(request)
+
+
+@middleware
+async def printing_middleware(request, handler):
+    request.app.logger.info(request.path)
+    return await handler(request)
