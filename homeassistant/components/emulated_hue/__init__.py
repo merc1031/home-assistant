@@ -62,7 +62,6 @@ CONFIG_ENTITY_SCHEMA = vol.Schema({
     vol.Optional(CONF_ENTITY_HIDDEN): cv.boolean,
     vol.Optional('extra'): cv.string
 })
-})
 
 CONFIG_SCHEMA = vol.Schema({
     DOMAIN: vol.Schema({
