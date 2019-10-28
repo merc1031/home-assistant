@@ -1,10 +1,12 @@
 """Support for Ecobee binary sensors."""
+from pyecobee.const import ECOBEE_MODEL_TO_NAME
+
 from homeassistant.components.binary_sensor import (
-    BinarySensorDevice,
     DEVICE_CLASS_OCCUPANCY,
+    BinarySensorDevice,
 )
 
-from .const import DOMAIN, ECOBEE_MODEL_TO_NAME, MANUFACTURER, _LOGGER
+from .const import _LOGGER, DOMAIN, MANUFACTURER
 
 
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
